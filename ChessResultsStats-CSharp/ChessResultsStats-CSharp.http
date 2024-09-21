@@ -1,0 +1,6 @@
+@ChessResultsStats_CSharp_HostAddress = http://localhost:5112
+
+GET {{ChessResultsStats_CSharp_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
