@@ -11,10 +11,7 @@ public class ChessGamesDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Configurer la table 'Games' si besoin (facultatif)
-        modelBuilder.Entity<Game>()
-            .ToTable("Games")
-            .HasKey(g => g.Id); // Clé primaire
+        modelBuilder.Entity<Game>().ToTable("Games").HasKey(g => g.Id); // Clé primaire
     }
 }
 

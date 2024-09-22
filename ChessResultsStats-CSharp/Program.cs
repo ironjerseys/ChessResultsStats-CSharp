@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Ajouter le service de base de données SQL Server
+// Service de base de données SQL Server
 builder.Services.AddDbContext<ChessGamesDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("ChessGamesDbConnection")));
 
-// Ajouter les services CORS
+// Services CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngularApp",
@@ -22,8 +22,6 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddScoped<GamesService>();
-
-
 builder.Services.AddControllers();
 builder.Services.AddSwaggerGen();
 

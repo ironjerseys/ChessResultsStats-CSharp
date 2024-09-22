@@ -5,14 +5,14 @@ namespace ChessResultsStats_CSharp.Model;
 
 public class Game
 {
-    [Key] // Définir le champ Id comme clé primaire
+    [Key] // Clé primaire
     public int Id { get; set; }
 
     public string Event { get; set; }
 
     public string Site { get; set; }
 
-    public DateTime Date { get; set; }  // LocalDate en Java est mappé sur DateTime
+    public DateTime Date { get; set; }
 
     public string Round { get; set; }
 
@@ -22,7 +22,7 @@ public class Game
 
     public string Result { get; set; }
 
-    public int? WhiteElo { get; set; }  // Integer en Java devient int? en C# pour permettre les valeurs nulles
+    public int? WhiteElo { get; set; }
 
     public int? BlackElo { get; set; }
 
@@ -32,7 +32,7 @@ public class Game
 
     public string Category { get; set; }
 
-    public TimeSpan EndTime { get; set; }  // LocalTime en Java devient TimeSpan
+    public TimeSpan EndTime { get; set; }
 
     public string Termination { get; set; }
 
@@ -50,5 +50,5 @@ public class Game
 
     public string Eco { get; set; }
 
-    public DateTime DateAndEndTime { get; set; } // Représente la combinaison de la date et de l'heure comme LocalDateTime
+    public DateTime DateAndEndTime { get; set; }
 }

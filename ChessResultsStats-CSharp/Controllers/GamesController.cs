@@ -21,17 +21,29 @@ public class GamesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Game>>> GetGamesByPlayerUsername(string playerUsername)
     {
-        // Utilisation de la méthode GetLastGameDateAndTimeAsync du service
+        // 1. We check the date of the last game in the database
         DateTime lastGameDateAndTime = await _gamesService.GetLastGameDateAndTimeAsync(playerUsername);
 
-        // Appelle la méthode pour récupérer les jeux du service
+        // 2. We get the data from the chess.com API, each string in the list is a month of data returned by the API
+        List<string> dataList = await _gamesService.GetGamesFromChessComAsync(playerUsername, lastGameDateAndTime, 3);
+
+        // 3. We create a list of recent games with the data
+        List<Game> currentGamesList = _gamesService.CreateFormattedGamesList(dataList, playerUsername, lastGameDateAndTime);
+
+        // 4. We save the list in database
+        await _gamesService.SaveGameInDatabaseAsync(currentGamesList);
+
+        // 5. We return all games for this user to the frontend
         var games = await _gamesService.GetGamesAsync(playerUsername);
 
-        if (games == null || games.Count == 0)
-        {
-            return NotFound();
-        }
-
         return Ok(games);
+    }
+
+
+    [HttpPost("games")]
+    public async Task<IActionResult> AddGame([FromBody] List<Game> gameList)
+    {
+        await _gamesService.SaveGameInDatabaseAsync(gameList);
+        return Ok();
     }
 }
