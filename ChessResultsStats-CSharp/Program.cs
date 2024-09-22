@@ -1,4 +1,5 @@
 using ChessResultsStats_CSharp.Data;
+using ChessResultsStats_CSharp.Service;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,9 @@ builder.Services.AddCors(options =>
                    .AllowCredentials();
         });
 });
+
+builder.Services.AddScoped<GamesService>();
+
 
 builder.Services.AddControllers();
 builder.Services.AddSwaggerGen();
