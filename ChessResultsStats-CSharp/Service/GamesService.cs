@@ -55,6 +55,9 @@ public class GamesService
 
         using (var httpClient = new HttpClient())
         {
+            // En-tête User-Agent pour éviter le 403 Forbidden
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; ChessResultsStatsApp/1.0)");
+
             for (int i = numberOfMonthsToFetch - 1; i >= 0; i--)
             {
                 var monthToFetch = now.AddMonths(-i);
@@ -62,6 +65,7 @@ public class GamesService
                 try
                 {
                     var response = await httpClient.GetStringAsync(url);
+                    //var response = await httpClient.GetFromJsonAsync<Game>(url);
                     dataList.Add(response);
                 }
                 catch (Exception e)
