@@ -1,3 +1,4 @@
+using Azure.Identity;
 using ChessResultsStats_CSharp.Data;
 using ChessResultsStats_CSharp.Service;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,11 @@ builder.Services.AddCors(options =>
                    .AllowCredentials();
         });
 });
+
+// Charger la configuration à partir de Key Vault
+builder.Configuration.AddAzureKeyVault(
+    new Uri($"https://chesresultsstats.vault.azure.net/"),
+    new DefaultAzureCredential());
 
 builder.Services.AddScoped<GamesService>();
 builder.Services.AddControllers();
