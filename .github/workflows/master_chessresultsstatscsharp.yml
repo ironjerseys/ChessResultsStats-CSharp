@@ -51,7 +51,7 @@ jobs:
         run: |
           echo "Setting up environment variables"
         env:
-          DB_PASSWORD: ${{ secrets.DBPASSWORD }}
+          DBPASSWORD: ${{ secrets.DBPASSWORD }}
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
