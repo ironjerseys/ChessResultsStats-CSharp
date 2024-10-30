@@ -127,7 +127,7 @@ public class GamesService
                                     currentGame.Site = value;
                                     break;
                                 case "Date":
-                                    currentGame.Date = DateTime.ParseExact(value, "yyyy.MM.dd", null).Date;
+                                    currentGame.Date = DateOnly.ParseExact(value, "yyyy.MM.dd");
                                     break;
                                 case "Round":
                                     currentGame.Round = value;
@@ -152,10 +152,6 @@ public class GamesService
                                     break;
                                 case "EndTime":
                                     currentGame.EndTime = TimeSpan.Parse(value);
-                                    if (currentGame.Date != DateTime.MinValue)
-                                    {
-                                        currentGame.DateAndEndTime = currentGame.Date.Add(currentGame.EndTime);
-                                    }
                                     break;
                                 case "Termination":
                                     currentGame.Termination = value;
@@ -184,7 +180,7 @@ public class GamesService
                         currentGame.ResultForPlayer = FindResultForPlayer(currentGame.Termination, currentGame.PlayerUsername);
                         currentGame.EndOfGameBy = HowEndedTheGame(currentGame.Termination);
 
-                        if (currentGame.DateAndEndTime > lastGameDateAndTime)
+                        if (CombineDateOnlyAndTime(currentGame.Date, currentGame.EndTime) > lastGameDateAndTime)
                         {
                             gamesToReturn.Add(currentGame);
                         }
@@ -195,6 +191,15 @@ public class GamesService
 
         return gamesToReturn;
     }
+
+    // Fonction utilitaire pour combiner DateOnly et TimeSpan en DateTime
+    private DateTime CombineDateOnlyAndTime(DateOnly date, TimeSpan time)
+    {
+        // Convertir TimeSpan en TimeOnly
+        TimeOnly timeOnly = TimeOnly.FromTimeSpan(time);
+        return date.ToDateTime(timeOnly);
+    }
+
 
     public static string FormatMoves(string moves)
     {
