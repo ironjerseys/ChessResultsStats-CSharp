@@ -1,8 +1,6 @@
-﻿using ChessResultsStats_CSharp.Service;
-using ChessResultsStats_CSharp.Model;
+﻿using ChessResultsStats_CSharp.Model;
+using ChessResultsStats_CSharp.Service;
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace ChessResultsStats_CSharp.Controllers;
 

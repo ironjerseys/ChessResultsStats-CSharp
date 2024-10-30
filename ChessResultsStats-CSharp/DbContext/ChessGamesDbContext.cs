@@ -1,5 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
-using ChessResultsStats_CSharp.Model;
+﻿using ChessResultsStats_CSharp.Model;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChessResultsStats_CSharp.Data;
 
@@ -14,5 +14,3 @@ public class ChessGamesDbContext : DbContext
         modelBuilder.Entity<Game>().ToTable("Games").HasKey(g => g.Id); // Clé primaire
     }
 }
-
-// Self_Destruction_Lets_Go

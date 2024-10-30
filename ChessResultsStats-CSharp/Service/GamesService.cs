@@ -1,17 +1,9 @@
 ﻿
-using Newtonsoft.Json.Linq;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
-using System.Text.RegularExpressions;
-using Microsoft.Extensions.Logging;
-using ChessResultsStats_CSharp.Model;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 using ChessResultsStats_CSharp.Data;
+using ChessResultsStats_CSharp.Model;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json.Linq;
+using System.Text.RegularExpressions;
 
 namespace ChessResultsStats_CSharp.Service;
 
@@ -135,7 +127,7 @@ public class GamesService
                                     currentGame.Site = value;
                                     break;
                                 case "Date":
-                                    currentGame.Date = DateTime.ParseExact(value, "yyyy.MM.dd", null);
+                                    currentGame.Date = DateTime.ParseExact(value, "yyyy.MM.dd", null).Date;
                                     break;
                                 case "Round":
                                     currentGame.Round = value;
