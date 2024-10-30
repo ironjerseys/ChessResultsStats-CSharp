@@ -11,7 +11,7 @@ public class Game
 
     public string Site { get; set; }
 
-    public DateTime Date { get; set; }
+    public DateOnly Date { get; set; }
 
     public string Round { get; set; }
 
