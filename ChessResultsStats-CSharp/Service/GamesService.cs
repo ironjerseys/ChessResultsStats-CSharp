@@ -3,6 +3,7 @@ using ChessResultsStats_CSharp.Data;
 using ChessResultsStats_CSharp.Model;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace ChessResultsStats_CSharp.Service;
@@ -127,7 +128,7 @@ public class GamesService
                                     currentGame.Site = value;
                                     break;
                                 case "Date":
-                                    currentGame.Date = DateOnly.ParseExact(value, "yyyy.MM.dd");
+                                    currentGame.Date = DateTime.ParseExact(value, "yyyy.MM.dd", CultureInfo.InvariantCulture);
                                     break;
                                 case "Round":
                                     currentGame.Round = value;
@@ -152,6 +153,10 @@ public class GamesService
                                     break;
                                 case "EndTime":
                                     currentGame.EndTime = TimeSpan.Parse(value);
+                                    if (currentGame.Date != DateTime.MinValue)
+                                    {
+                                        currentGame.DateAndEndTime = currentGame.Date.Add(currentGame.EndTime);
+                                    }
                                     break;
                                 case "Termination":
                                     currentGame.Termination = value;
@@ -180,7 +185,12 @@ public class GamesService
                         currentGame.ResultForPlayer = FindResultForPlayer(currentGame.Termination, currentGame.PlayerUsername);
                         currentGame.EndOfGameBy = HowEndedTheGame(currentGame.Termination);
 
-                        if (CombineDateOnlyAndTime(currentGame.Date, currentGame.EndTime) > lastGameDateAndTime)
+                        //if (CombineDateOnlyAndTime(currentGame.Date, currentGame.EndTime) > lastGameDateAndTime)
+                        //{
+                        //    gamesToReturn.Add(currentGame);
+                        //}
+
+                        if (currentGame.DateAndEndTime > lastGameDateAndTime)
                         {
                             gamesToReturn.Add(currentGame);
                         }
