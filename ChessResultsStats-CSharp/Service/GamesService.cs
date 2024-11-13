@@ -1,5 +1,4 @@
-﻿
-using ChessResultsStats_CSharp.Data;
+﻿using ChessResultsStats_CSharp.Data;
 using ChessResultsStats_CSharp.Model;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
@@ -10,35 +9,54 @@ namespace ChessResultsStats_CSharp.Service;
 
 public class GamesService
 {
-    private readonly ILogger<GamesService> _logger;
+    private readonly Serilog.ILogger _logger;
     private readonly ChessGamesDbContext _context;
 
-    public GamesService(ILogger<GamesService> logger, ChessGamesDbContext context)
+    public GamesService(Serilog.ILogger logger, ChessGamesDbContext context)
     {
         _logger = logger;
         _context = context;
     }
 
+    // On récupère la date de la dernière partie pour savoir quels mois on doit récupérer sur Chess.com
     public async Task<DateTime> GetLastGameDateAndTimeAsync(string playerUsername)
     {
-        var games = await _context.Games.Where(g => g.PlayerUsername == playerUsername).ToListAsync();
-
-        if (!games.Any())
+        try
         {
-            return new DateTime(1970, 1, 1, 0, 0, 0);
+            // On interroge la bdd
+            var games = await _context.Games.Where(g => g.PlayerUsername == playerUsername).ToListAsync();
+
+            // si bdd vide on renvoie une date par défaut
+            if (!games.Any())
+            {
+                return new DateTime(1970, 1, 1, 0, 0, 0);
+            }
+
+            // on trie
+            var lastGame = games.OrderByDescending(g => g.DateAndEndTime).FirstOrDefault();
+
+            // si bdd vide on renvoie une date par défaut
+            var result = lastGame?.DateAndEndTime ?? new DateTime(1970, 1, 1, 0, 0, 0);
+
+            _logger.Information("{MethodName} - Last game date and time: {Result}", nameof(GetLastGameDateAndTimeAsync), result.ToString());
+            return result;
         }
-
-        var lastGame = games.OrderByDescending(g => g.DateAndEndTime).FirstOrDefault();
-
-        return lastGame?.DateAndEndTime ?? new DateTime(1970, 1, 1, 0, 0, 0);
+        catch (Exception ex)
+        {
+            _logger.Error("{MethodName} - {Exception}", nameof(GetLastGameDateAndTimeAsync), ex);
+            throw new Exception();
+        }
     }
 
+    // On recupere les donnee de l'API Chess.com
     public async Task<List<string>> GetGamesFromChessComAsync(string username, DateTime lastGameDateAndTime, int maximumNumberOfMonthsToFetch)
     {
         var dataList = new List<string>();
         var now = DateTime.Now;
         var numberOfMonthsToFetch = maximumNumberOfMonthsToFetch;
 
+        // on calcule le nombre d'appels API a faire a chess.com en fonction de la date de la derniere partie en bdd, et du nombre de mois qu'on veut récupérer, 
+        // un mois = un appel API
         if (lastGameDateAndTime != DateTime.MinValue)
         {
             var lastGameYearMonth = new DateTime(lastGameDateAndTime.Year, lastGameDateAndTime.Month, 1);
@@ -58,19 +76,19 @@ public class GamesService
                 try
                 {
                     var response = await httpClient.GetStringAsync(url);
-                    //var response = await httpClient.GetFromJsonAsync<Game>(url);
                     dataList.Add(response);
                 }
                 catch (Exception e)
                 {
-                    _logger.LogError("Error in GetGamesFromChessComAsync", e);
+                    _logger.Error("Error in {MethodName}", nameof(GetGamesFromChessComAsync), e);
                 }
+                _logger.Information("{MethodName} - API call - monthToFetch = {monthToFetch} - url = {url}", nameof(GetGamesFromChessComAsync), monthToFetch.ToString(), url);
             }
         }
-
         return dataList;
     }
 
+    // On formatte les données
     public List<Game> CreateFormattedGamesList(List<string> dataList, string username, DateTime lastGameDateAndTime)
     {
         var gamesToReturn = new List<Game>();
@@ -185,11 +203,6 @@ public class GamesService
                         currentGame.ResultForPlayer = FindResultForPlayer(currentGame.Termination, currentGame.PlayerUsername);
                         currentGame.EndOfGameBy = HowEndedTheGame(currentGame.Termination);
 
-                        //if (CombineDateOnlyAndTime(currentGame.Date, currentGame.EndTime) > lastGameDateAndTime)
-                        //{
-                        //    gamesToReturn.Add(currentGame);
-                        //}
-
                         if (currentGame.DateAndEndTime > lastGameDateAndTime)
                         {
                             gamesToReturn.Add(currentGame);
@@ -198,19 +211,19 @@ public class GamesService
                 }
             }
         }
-
+        _logger.Information("{MethodName} - Number of games returned {gamesToReturn}", nameof(CreateFormattedGamesList), gamesToReturn.Count());
         return gamesToReturn;
     }
 
     // Fonction utilitaire pour combiner DateOnly et TimeSpan en DateTime
-    private DateTime CombineDateOnlyAndTime(DateOnly date, TimeSpan time)
-    {
-        // Convertir TimeSpan en TimeOnly
-        TimeOnly timeOnly = TimeOnly.FromTimeSpan(time);
-        return date.ToDateTime(timeOnly);
-    }
+    //private DateTime CombineDateOnlyAndTime(DateOnly date, TimeSpan time)
+    //{
+    //    // Convertir TimeSpan en TimeOnly
+    //    TimeOnly timeOnly = TimeOnly.FromTimeSpan(time);
+    //    return date.ToDateTime(timeOnly);
+    //}
 
-
+    // Fonction pour formatted les Moves utilisée par CreateFormattedGamesList
     public static string FormatMoves(string moves)
     {
         string cleanedString = Regex.Replace(moves, "\\{[^}]+\\}", "");
@@ -219,6 +232,7 @@ public class GamesService
         return string.Join(" ", filteredMoves).Replace("  ", " ");
     }
 
+    // Fonction pour définir le resultat pour le joueur demandé, utilisée par CreateFormattedGamesList
     public static string FindResultForPlayer(string termination, string playerUsername)
     {
         if (termination.Contains("Partie nulle"))
@@ -235,6 +249,7 @@ public class GamesService
         }
     }
 
+    // Fonction pour définir la cadence, utilisée par CreateFormattedGamesList
     public static string SetCategoryFromTimeControl(string timeControl)
     {
         return timeControl switch
@@ -246,6 +261,7 @@ public class GamesService
         };
     }
 
+    // Fonction pour définir comment s'est terminée la partie, utilisée par CreateFormattedGamesList
     public static string HowEndedTheGame(string termination)
     {
         if (termination.Contains("temps") || termination.Contains("time"))
@@ -279,22 +295,34 @@ public class GamesService
         return "";
     }
 
+    // Fonction pour sauvegarder en bdd
     public async Task SaveGameInDatabaseAsync(List<Game> games)
     {
         try
         {
             await _context.Games.AddRangeAsync(games);
             await _context.SaveChangesAsync();
+            _logger.Information("{MethodName} - Number of games saved in database {games}", nameof(CreateFormattedGamesList), games.Count());
         }
         catch (Exception e)
         {
-            _logger.LogError("Error in SaveGameInDatabaseAsync", e);
+            _logger.Error("Error in {MethodName}", nameof(SaveGameInDatabaseAsync), e);
         }
     }
 
+    // Fonction pour envoyer le contenu de la bdd au front
     public async Task<List<Game>> GetGamesAsync(string username)
     {
-        return await _context.Games.Where(g => g.PlayerUsername == username).ToListAsync();
+        List<Game> result = new List<Game>();
+        try
+        {
+            result = await _context.Games.Where(g => g.PlayerUsername == username).ToListAsync();
+        }
+        catch (Exception e)
+        {
+            _logger.Error("Error in {MethodName}", nameof(GetGamesAsync), e);
+        }
+        return result;
     }
 }
 
