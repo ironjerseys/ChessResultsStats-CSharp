@@ -272,6 +272,18 @@ public class GamesService
         return "";
     }
 
+    public Dictionary<DayOfWeek, double> CalculateWinrateByDay()
+    {
+        var winrateByDay = games
+            .GroupBy(g => g.DayOfWeek)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Count(x => x.ResultForPlayer == "won") * 100.0 / g.Count()
+            );
+
+        return winrateByDay;
+    }
+
     public async Task SaveGameInDatabaseAsync(List<Game> games)
     {
         try

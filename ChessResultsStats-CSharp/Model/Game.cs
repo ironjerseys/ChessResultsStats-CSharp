@@ -51,4 +51,6 @@ public class Game
     public string Eco { get; set; }
 
     public DateTime DateAndEndTime { get; set; }
+
+    public DayOfWeek DayOfWeek => Date.DayOfWeek;
 }
