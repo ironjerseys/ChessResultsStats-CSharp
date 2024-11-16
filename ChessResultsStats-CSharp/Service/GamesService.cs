@@ -127,7 +127,7 @@ public class GamesService
                             currentGame = new Game();
                         }
 
-                        if (accuracy != 0 && currentGame != null && currentGame.Accuracy == 0)
+                        if (accuracy != 0 && currentGame != null && (currentGame.Accuracy ?? 0) == 0)
                         {
                             currentGame.Accuracy = accuracy;
                         }
