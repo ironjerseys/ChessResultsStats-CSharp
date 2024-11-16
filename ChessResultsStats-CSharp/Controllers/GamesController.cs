@@ -44,4 +44,21 @@ public class GamesController : ControllerBase
         await _gamesService.SaveGameInDatabaseAsync(gameList);
         return Ok();
     }
+
+    [HttpGet("winrates")]
+    public async Task<IActionResult> GetWinrates(string username)
+    {
+        if (string.IsNullOrEmpty(username))
+        {
+            return BadRequest("Username is required.");
+        }
+
+        // Appelle le service pour mettre à jour les données
+        //await _gamesService.GetWinratesByHourAsync(username);
+
+        // Récupère les données mises à jour pour les renvoyer au front
+        var winrates = await _gamesService.GetWinratesByHourAsync(username);
+
+        return Ok(winrates); // Renvoie les winrates au front
+    }
 }

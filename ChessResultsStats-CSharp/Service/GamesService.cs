@@ -320,5 +320,115 @@ public class GamesService
         }
         return result;
     }
+
+    public async Task<WinratesByHour> GetWinratesByHourAsync(string playerUsername)
+    {
+        // Récupérer les parties du joueur
+        var games = await _context.Games
+            .Where(g => g.PlayerUsername == playerUsername)
+            .ToListAsync();
+
+        if (!games.Any())
+        {
+            return null; // Aucun jeu à traiter
+        }
+
+        // Initialiser un tableau pour stocker les parties jouées et gagnées par heure
+        int[] gamesPlayed = new int[24];
+        int[] gamesWon = new int[24];
+
+        // Parcourir les parties pour calculer les données par heure
+        foreach (var game in games)
+        {
+            var hour = game.DateAndEndTime.Hour;
+            gamesPlayed[hour]++;
+
+            if (game.ResultForPlayer == "won")
+            {
+                gamesWon[hour]++;
+            }
+        }
+
+        // Calculer les winrates
+        var winrates = new double[24];
+        for (int i = 0; i < 24; i++)
+        {
+            winrates[i] = gamesPlayed[i] > 0 ? (double)gamesWon[i] / gamesPlayed[i] : 0;
+        }
+
+        // Vérifier si une entrée pour ce joueur existe déjà dans WinratesByHour
+        var existingEntry = await _context.WinratesByHour.FindAsync(playerUsername);
+
+        if (existingEntry != null)
+        {
+            // Mettre à jour les colonnes existantes
+            existingEntry.Hour_0 = winrates[0];
+            existingEntry.Hour_1 = winrates[1];
+            existingEntry.Hour_2 = winrates[2];
+            existingEntry.Hour_3 = winrates[3];
+            existingEntry.Hour_4 = winrates[4];
+            existingEntry.Hour_5 = winrates[5];
+            existingEntry.Hour_6 = winrates[6];
+            existingEntry.Hour_7 = winrates[7];
+            existingEntry.Hour_8 = winrates[8];
+            existingEntry.Hour_9 = winrates[9];
+            existingEntry.Hour_10 = winrates[10];
+            existingEntry.Hour_11 = winrates[11];
+            existingEntry.Hour_12 = winrates[12];
+            existingEntry.Hour_13 = winrates[13];
+            existingEntry.Hour_14 = winrates[14];
+            existingEntry.Hour_15 = winrates[15];
+            existingEntry.Hour_16 = winrates[16];
+            existingEntry.Hour_17 = winrates[17];
+            existingEntry.Hour_18 = winrates[18];
+            existingEntry.Hour_19 = winrates[19];
+            existingEntry.Hour_20 = winrates[20];
+            existingEntry.Hour_21 = winrates[21];
+            existingEntry.Hour_22 = winrates[22];
+            existingEntry.Hour_23 = winrates[23];
+
+            _context.WinratesByHour.Update(existingEntry);
+            await _context.SaveChangesAsync();
+            return existingEntry;
+        }
+        else
+        {
+            // Ajouter une nouvelle entrée si elle n'existe pas
+            var newEntry = new WinratesByHour
+            {
+                PlayerUsername = playerUsername,
+                Hour_0 = winrates[0],
+                Hour_1 = winrates[1],
+                Hour_2 = winrates[2],
+                Hour_3 = winrates[3],
+                Hour_4 = winrates[4],
+                Hour_5 = winrates[5],
+                Hour_6 = winrates[6],
+                Hour_7 = winrates[7],
+                Hour_8 = winrates[8],
+                Hour_9 = winrates[9],
+                Hour_10 = winrates[10],
+                Hour_11 = winrates[11],
+                Hour_12 = winrates[12],
+                Hour_13 = winrates[13],
+                Hour_14 = winrates[14],
+                Hour_15 = winrates[15],
+                Hour_16 = winrates[16],
+                Hour_17 = winrates[17],
+                Hour_18 = winrates[18],
+                Hour_19 = winrates[19],
+                Hour_20 = winrates[20],
+                Hour_21 = winrates[21],
+                Hour_22 = winrates[22],
+                Hour_23 = winrates[23],
+            };
+
+            await _context.WinratesByHour.AddAsync(newEntry);
+            await _context.SaveChangesAsync();
+            return newEntry;
+        }
+    }
+
+
 }
 
