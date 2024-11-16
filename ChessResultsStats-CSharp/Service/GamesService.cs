@@ -215,14 +215,6 @@ public class GamesService
         return gamesToReturn;
     }
 
-    // Fonction utilitaire pour combiner DateOnly et TimeSpan en DateTime
-    //private DateTime CombineDateOnlyAndTime(DateOnly date, TimeSpan time)
-    //{
-    //    // Convertir TimeSpan en TimeOnly
-    //    TimeOnly timeOnly = TimeOnly.FromTimeSpan(time);
-    //    return date.ToDateTime(timeOnly);
-    //}
-
     // Fonction pour formatted les Moves utilisée par CreateFormattedGamesList
     public static string FormatMoves(string moves)
     {
@@ -235,7 +227,7 @@ public class GamesService
     // Fonction pour définir le resultat pour le joueur demandé, utilisée par CreateFormattedGamesList
     public static string FindResultForPlayer(string termination, string playerUsername)
     {
-        if (termination.Contains("Partie nulle"))
+        if (termination.Contains("Partie nulle") || termination.Contains("drawn"))
         {
             return "drawn";
         }
