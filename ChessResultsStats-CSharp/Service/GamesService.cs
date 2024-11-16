@@ -218,6 +218,10 @@ public class GamesService
     // Fonction pour formatted les Moves utilisée par CreateFormattedGamesList
     public static string FormatMoves(string moves)
     {
+        if (moves == null)
+        {
+            return string.Empty;
+        }
         string cleanedString = Regex.Replace(moves, "\\{[^}]+\\}", "");
         var movesArray = cleanedString.Split(" ");
         var filteredMoves = movesArray.Where(move => !move.Contains("...")).ToArray();
