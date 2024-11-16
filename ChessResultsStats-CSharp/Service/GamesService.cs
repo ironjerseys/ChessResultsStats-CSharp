@@ -235,7 +235,7 @@ public class GamesService
         {
             return "drawn";
         }
-        else if (termination.Contains(playerUsername))
+        else if (termination.Contains(playerUsername, StringComparison.OrdinalIgnoreCase))
         {
             return "won";
         }
