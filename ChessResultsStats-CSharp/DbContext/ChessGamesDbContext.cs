@@ -9,10 +9,12 @@ public class ChessGamesDbContext : DbContext
 
     public DbSet<Game> Games { get; set; }
     public DbSet<WinratesByHour> WinratesByHour { get; set; }
+    public DbSet<AverageMovesByPiece> AverageMovesByPiece { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Game>().ToTable("Games").HasKey(g => g.Id); // Clé primaire
+        modelBuilder.Entity<Game>().ToTable("Games").HasKey(g => g.Id);
         modelBuilder.Entity<WinratesByHour>().ToTable("WinratesByHour").HasKey(w => w.PlayerUsername);
+        modelBuilder.Entity<AverageMovesByPiece>().ToTable("AverageMovesByPiece").HasKey(a => a.PlayerUsername);
     }
 }

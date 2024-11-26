@@ -429,6 +429,109 @@ public class GamesService
         }
     }
 
+    public async Task<AverageMovesByPiece> UpdateAverageMovesByPieceAsync(string playerUsername)
+    {
+        // Récupérer toutes les parties du joueur
+        var games = await _context.Games.Where(g => g.PlayerUsername == playerUsername).ToListAsync();
+
+        if (!games.Any())
+        {
+            throw new Exception("AverageMovesByPiece table is not configured in DbContext.");
+        }
+
+        // Initialiser les compteurs
+        int totalGames = games.Count;
+        int pawnMoves = 0, knightMoves = 0, bishopMoves = 0;
+        int rookMoves = 0, queenMoves = 0, kingMoves = 0;
+
+        // Parcourir les parties et compter les coups par pièce
+        foreach (var game in games)
+        {
+            var moves = CountPieceMoves(game.Moves);
+
+            pawnMoves += moves["pawn"];
+            knightMoves += moves["knight"];
+            bishopMoves += moves["bishop"];
+            rookMoves += moves["rook"];
+            queenMoves += moves["queen"];
+            kingMoves += moves["king"];
+        }
+
+        // Calculer les moyennes
+        var averageMoves = new AverageMovesByPiece
+        {
+            PlayerUsername = playerUsername,
+            AvgPawnMoves = (double)pawnMoves / totalGames,
+            AvgKnightMoves = (double)knightMoves / totalGames,
+            AvgBishopMoves = (double)bishopMoves / totalGames,
+            AvgRookMoves = (double)rookMoves / totalGames,
+            AvgQueenMoves = (double)queenMoves / totalGames,
+            AvgKingMoves = (double)kingMoves / totalGames
+        };
+
+        // Vérifier si une entrée existe déjà
+        var existingEntry = await _context.AverageMovesByPiece.FindAsync(playerUsername);
+
+        if (existingEntry != null)
+        {
+            // Mettre à jour l'entrée existante
+            existingEntry.AvgPawnMoves = averageMoves.AvgPawnMoves;
+            existingEntry.AvgKnightMoves = averageMoves.AvgKnightMoves;
+            existingEntry.AvgBishopMoves = averageMoves.AvgBishopMoves;
+            existingEntry.AvgRookMoves = averageMoves.AvgRookMoves;
+            existingEntry.AvgQueenMoves = averageMoves.AvgQueenMoves;
+            existingEntry.AvgKingMoves = averageMoves.AvgKingMoves;
+
+            _context.AverageMovesByPiece.Update(existingEntry);
+        }
+        else
+        {
+            // Ajouter une nouvelle entrée
+            await _context.AverageMovesByPiece.AddAsync(averageMoves);
+        }
+
+        // Sauvegarder les modifications
+        await _context.SaveChangesAsync();
+        return averageMoves;
+    }
+
+    // Compter les coups par type de pièce
+    private Dictionary<string, int> CountPieceMoves(string movesString)
+    {
+        // Initialiser les compteurs
+        var movesCount = new Dictionary<string, int>
+    {
+        { "pawn", 0 },
+        { "knight", 0 },
+        { "bishop", 0 },
+        { "rook", 0 },
+        { "queen", 0 },
+        { "king", 0 }
+    };
+
+        // Diviser les coups en mouvements individuels
+        var moves = movesString.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var move in moves)
+        {
+            // Ignorer les numéros de tour (par exemple, "1.", "2.", etc.)
+            if (char.IsDigit(move[0]) && move.Contains('.'))
+            {
+                continue;
+            }
+
+            // Compter les coups en fonction du premier caractère
+            if (move.StartsWith("N")) movesCount["knight"]++; // Cavalier
+            else if (move.StartsWith("B")) movesCount["bishop"]++; // Fou
+            else if (move.StartsWith("R")) movesCount["rook"]++; // Tour
+            else if (move.StartsWith("Q")) movesCount["queen"]++; // Dame
+            else if (move.StartsWith("K")) movesCount["king"]++; // Roi
+            else if (char.IsLower(move[0])) movesCount["pawn"]++; // Pion (aucun préfixe)
+        }
+
+        return movesCount;
+    }
+
 
 }
 

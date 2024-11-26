@@ -61,4 +61,23 @@ public class GamesController : ControllerBase
 
         return Ok(winrates); // Renvoie les winrates au front
     }
+
+
+    [HttpGet("get-average-moves")]
+    public async Task<IActionResult> UpdateAverageMoves([FromQuery] string username)
+    {
+        if (string.IsNullOrEmpty(username))
+        {
+            return BadRequest("Username is required.");
+        }
+        try
+        {
+            var result = await _gamesService.UpdateAverageMovesByPieceAsync(username);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
 }
