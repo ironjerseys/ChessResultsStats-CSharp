@@ -1,400 +1,378 @@
-﻿using ChessResultsStats_CSharp.Data;
-using ChessResultsStats_CSharp.Model;
-using Microsoft.EntityFrameworkCore;
+﻿using ChessResultsStats_CSharp.Model;
 using Newtonsoft.Json.Linq;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace ChessResultsStats_CSharp.Service;
-
-public class GamesService
+namespace ChessResultsStats_CSharp.Service
 {
-    private readonly Serilog.ILogger _logger;
-    private readonly ChessGamesDbContext _context;
-
-    public GamesService(Serilog.ILogger logger, ChessGamesDbContext context)
+    public class GamesService
     {
-        _logger = logger;
-        _context = context;
-    }
+        private readonly Serilog.ILogger _logger;
 
-    // On récupère la date de la dernière partie pour savoir quels mois on doit récupérer sur Chess.com
-    public async Task<DateTime> GetLastGameDateAndTimeAsync(string playerUsername)
-    {
-        try
+        // Stockage en mémoire :
+        // Key   = nom d'utilisateur
+        // Value = liste des parties déjà récupérées depuis l'API
+        private static readonly Dictionary<string, List<Game>> _inMemoryGames = new();
+
+        public GamesService(Serilog.ILogger logger)
         {
-            // On interroge la bdd
-            var games = await _context.Games.Where(g => g.PlayerUsername == playerUsername).ToListAsync();
+            _logger = logger;
+        }
 
-            // si bdd vide on renvoie une date par défaut
-            if (!games.Any())
+        // 1. On détermine la date de la dernière partie stockée en mémoire pour l'utilisateur
+        //    (au lieu de la base de données).
+        public DateTime GetLastGameDateAndTime(string playerUsername)
+        {
+            if (!_inMemoryGames.ContainsKey(playerUsername) || !_inMemoryGames[playerUsername].Any())
             {
+                // Rien en mémoire => On force une date de départ très ancienne
                 return new DateTime(1970, 1, 1, 0, 0, 0);
             }
 
-            // on trie
-            var lastGame = games.OrderByDescending(g => g.DateAndEndTime).FirstOrDefault();
-
-            // si bdd vide on renvoie une date par défaut
-            var result = lastGame?.DateAndEndTime ?? new DateTime(1970, 1, 1, 0, 0, 0);
-
-            _logger.Information("{MethodName} - Last game date and time: {Result}", nameof(GetLastGameDateAndTimeAsync), result.ToString());
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _logger.Error("{MethodName} - {Exception}", nameof(GetLastGameDateAndTimeAsync), ex);
-            throw new Exception();
-        }
-    }
-
-    // On recupere les donnee de l'API Chess.com
-    public async Task<List<string>> GetGamesFromChessComAsync(string username, DateTime lastGameDateAndTime, int maximumNumberOfMonthsToFetch)
-    {
-        var dataList = new List<string>();
-        var now = DateTime.Now;
-        var numberOfMonthsToFetch = maximumNumberOfMonthsToFetch;
-
-        // on calcule le nombre d'appels API a faire a chess.com en fonction de la date de la derniere partie en bdd, et du nombre de mois qu'on veut récupérer, 
-        // un mois = un appel API
-        if (lastGameDateAndTime != DateTime.MinValue)
-        {
-            var lastGameYearMonth = new DateTime(lastGameDateAndTime.Year, lastGameDateAndTime.Month, 1);
-            var monthsDifference = ((now.Year - lastGameYearMonth.Year) * 12) + now.Month - lastGameYearMonth.Month;
-            numberOfMonthsToFetch = Math.Min(monthsDifference + 1, maximumNumberOfMonthsToFetch);
+            // Sinon on retourne la plus récente
+            var lastGame = _inMemoryGames[playerUsername]
+                .OrderByDescending(g => g.DateAndEndTime)
+                .First();
+            return lastGame.DateAndEndTime;
         }
 
-        using (var httpClient = new HttpClient())
+        // 2. Récupération des données depuis l’API Chess.com
+        public async Task<List<string>> GetGamesFromChessComAsync(
+            string username,
+            DateTime lastGameDateAndTime,
+            int maximumNumberOfMonthsToFetch)
         {
+            var dataList = new List<string>();
+            var now = DateTime.Now;
+            var numberOfMonthsToFetch = maximumNumberOfMonthsToFetch;
+
+            // Calcul du nombre de mois à récupérer
+            if (lastGameDateAndTime != DateTime.MinValue)
+            {
+                var lastGameYearMonth = new DateTime(lastGameDateAndTime.Year, lastGameDateAndTime.Month, 1);
+                var monthsDifference = ((now.Year - lastGameYearMonth.Year) * 12)
+                                       + now.Month - lastGameYearMonth.Month;
+                numberOfMonthsToFetch = Math.Min(monthsDifference + 1, maximumNumberOfMonthsToFetch);
+            }
+
+            using var httpClient = new HttpClient();
             // En-tête User-Agent pour éviter le 403 Forbidden
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; ChessResultsStatsApp/1.0)");
+            httpClient.DefaultRequestHeaders.Add("User-Agent",
+                "Mozilla/5.0 (compatible; ChessResultsStatsApp/1.0)");
 
             for (int i = numberOfMonthsToFetch - 1; i >= 0; i--)
             {
                 var monthToFetch = now.AddMonths(-i);
-                var url = $"https://api.chess.com/pub/player/{username}/games/{monthToFetch.Year}/{monthToFetch.Month:D2}";
+                var url = $"https://api.chess.com/pub/player/{username}/games/" +
+                          $"{monthToFetch.Year}/{monthToFetch.Month:D2}";
+
                 try
                 {
                     var response = await httpClient.GetStringAsync(url);
                     dataList.Add(response);
+                    _logger.Information(
+                        "{MethodName} - Fetched month {month} from {url}",
+                        nameof(GetGamesFromChessComAsync),
+                        monthToFetch.ToString("yyyy-MM"),
+                        url);
                 }
                 catch (Exception e)
                 {
-                    _logger.Error("Error in {MethodName}", nameof(GetGamesFromChessComAsync), e);
+                    _logger.Error(e, "Error in {MethodName}", nameof(GetGamesFromChessComAsync));
                 }
-                _logger.Information("{MethodName} - API call - monthToFetch = {monthToFetch} - url = {url}", nameof(GetGamesFromChessComAsync), monthToFetch.ToString(), url);
             }
+            return dataList;
         }
-        return dataList;
-    }
 
-    // On formatte les données
-    public List<Game> CreateFormattedGamesList(List<string> dataList, string username, DateTime lastGameDateAndTime)
-    {
-        var gamesToReturn = new List<Game>();
-
-        foreach (var data in dataList)
+        // 3. On formate les données brutes en objets `Game`
+        public List<Game> CreateFormattedGamesList(
+            List<string> dataList,
+            string username,
+            DateTime lastGameDateAndTime)
         {
-            var obj = JObject.Parse(data);
-            var gamesArray = obj["games"] as JArray;
+            var gamesToReturn = new List<Game>();
 
-            foreach (var gameJson in gamesArray)
+            foreach (var data in dataList)
             {
-                var gamePgn = gameJson["pgn"].ToString();
-                var white = gameJson["white"] as JObject;
+                var obj = JObject.Parse(data);
+                var gamesArray = obj["games"] as JArray;
+                if (gamesArray == null) continue;
 
-                double accuracy = 0;
-                if (gameJson["accuracies"] != null)
+                foreach (var gameJson in gamesArray)
                 {
-                    accuracy = white["username"].ToString() == username
-                        ? (double)gameJson["accuracies"]["white"]
-                        : (double)gameJson["accuracies"]["black"];
-                }
+                    var gamePgn = gameJson["pgn"]?.ToString() ?? "";
+                    var white = gameJson["white"] as JObject;
+                    double accuracy = 0;
 
-                using (var reader = new StringReader(gamePgn))
-                {
-                    string line;
-                    Game currentGame = null;
-
-                    while ((line = reader.ReadLine()) != null)
+                    // Si l'objet "accuracies" existe dans le JSON
+                    if (gameJson["accuracies"] != null && white != null)
                     {
-                        if (line.StartsWith("[Event "))
+                        var isWhitePlayer = (white["username"]?.ToString() ?? "") == username;
+                        accuracy = isWhitePlayer
+                            ? (double)gameJson["accuracies"]["white"]
+                            : (double)gameJson["accuracies"]["black"];
+                    }
+
+                    using (var reader = new StringReader(gamePgn))
+                    {
+                        string line;
+                        Game currentGame = null;
+
+                        while ((line = reader.ReadLine()) != null)
                         {
-                            if (currentGame != null && currentGame.DateAndEndTime > lastGameDateAndTime)
+                            if (line.StartsWith("[Event "))
+                            {
+                                // Dès qu'on detecte un nouvel Event,
+                                // on ajoute le précédent s'il est plus récent que lastGameDateAndTime
+                                if (currentGame != null &&
+                                    currentGame.DateAndEndTime > lastGameDateAndTime)
+                                {
+                                    gamesToReturn.Add(currentGame);
+                                }
+                                currentGame = new Game();
+                            }
+
+                            if (accuracy != 0 && currentGame != null && (currentGame.Accuracy ?? 0) == 0)
+                            {
+                                currentGame.Accuracy = accuracy;
+                            }
+
+                            if (currentGame != null && line.StartsWith("["))
+                            {
+                                var key = line.Substring(1, line.IndexOf(' ') - 1);
+                                var value = line.Substring(
+                                    line.IndexOf('"') + 1,
+                                    line.LastIndexOf('"') - line.IndexOf('"') - 1);
+
+                                switch (key)
+                                {
+                                    case "Event":
+                                        currentGame.Event = value;
+                                        break;
+                                    case "Site":
+                                        currentGame.Site = value;
+                                        break;
+                                    case "Date":
+                                        currentGame.Date = DateTime.ParseExact(
+                                            value, "yyyy.MM.dd", CultureInfo.InvariantCulture);
+                                        break;
+                                    case "Round":
+                                        currentGame.Round = value;
+                                        break;
+                                    case "White":
+                                        currentGame.White = value;
+                                        break;
+                                    case "Black":
+                                        currentGame.Black = value;
+                                        break;
+                                    case "Result":
+                                        currentGame.Result = value;
+                                        break;
+                                    case "WhiteElo":
+                                        currentGame.WhiteElo = int.Parse(value);
+                                        break;
+                                    case "BlackElo":
+                                        currentGame.BlackElo = int.Parse(value);
+                                        break;
+                                    case "TimeControl":
+                                        currentGame.TimeControl = value;
+                                        break;
+                                    case "EndTime":
+                                        currentGame.EndTime = TimeSpan.Parse(value);
+                                        if (currentGame.Date != DateTime.MinValue)
+                                        {
+                                            currentGame.DateAndEndTime = currentGame.Date.Add(currentGame.EndTime);
+                                        }
+                                        break;
+                                    case "Termination":
+                                        currentGame.Termination = value;
+                                        break;
+                                    case "ECO":
+                                        currentGame.Eco = value;
+                                        break;
+                                    case "ECOUrl":
+                                        var parts = value.Split('/');
+                                        currentGame.Opening = parts.Last();
+                                        break;
+                                }
+                            }
+                            else if (currentGame != null && !string.IsNullOrWhiteSpace(line))
+                            {
+                                currentGame.Moves = (currentGame.Moves ?? "") + line + " ";
+                            }
+                        }
+
+                        if (currentGame != null)
+                        {
+                            currentGame.PlayerElo =
+                                (username == currentGame.White) ? currentGame.WhiteElo : currentGame.BlackElo;
+                            currentGame.PlayerUsername = username;
+                            currentGame.Moves = FormatMoves(currentGame.Moves);
+                            currentGame.Category = SetCategoryFromTimeControl(currentGame.TimeControl);
+                            currentGame.ResultForPlayer =
+                                FindResultForPlayer(currentGame.Termination, currentGame.PlayerUsername);
+                            currentGame.EndOfGameBy = HowEndedTheGame(currentGame.Termination);
+
+                            if (currentGame.DateAndEndTime > lastGameDateAndTime)
                             {
                                 gamesToReturn.Add(currentGame);
                             }
-                            currentGame = new Game();
-                        }
-
-                        if (accuracy != 0 && currentGame != null && (currentGame.Accuracy ?? 0) == 0)
-                        {
-                            currentGame.Accuracy = accuracy;
-                        }
-
-                        if (currentGame != null && line.StartsWith("["))
-                        {
-                            var key = line.Substring(1, line.IndexOf(' ') - 1);
-                            var value = line.Substring(line.IndexOf('"') + 1, line.LastIndexOf('"') - line.IndexOf('"') - 1);
-
-                            switch (key)
-                            {
-                                case "Event":
-                                    currentGame.Event = value;
-                                    break;
-                                case "Site":
-                                    currentGame.Site = value;
-                                    break;
-                                case "Date":
-                                    currentGame.Date = DateTime.ParseExact(value, "yyyy.MM.dd", CultureInfo.InvariantCulture);
-                                    break;
-                                case "Round":
-                                    currentGame.Round = value;
-                                    break;
-                                case "White":
-                                    currentGame.White = value;
-                                    break;
-                                case "Black":
-                                    currentGame.Black = value;
-                                    break;
-                                case "Result":
-                                    currentGame.Result = value;
-                                    break;
-                                case "WhiteElo":
-                                    currentGame.WhiteElo = int.Parse(value);
-                                    break;
-                                case "BlackElo":
-                                    currentGame.BlackElo = int.Parse(value);
-                                    break;
-                                case "TimeControl":
-                                    currentGame.TimeControl = value;
-                                    break;
-                                case "EndTime":
-                                    currentGame.EndTime = TimeSpan.Parse(value);
-                                    if (currentGame.Date != DateTime.MinValue)
-                                    {
-                                        currentGame.DateAndEndTime = currentGame.Date.Add(currentGame.EndTime);
-                                    }
-                                    break;
-                                case "Termination":
-                                    currentGame.Termination = value;
-                                    break;
-                                case "ECO":
-                                    currentGame.Eco = value;
-                                    break;
-                                case "ECOUrl":
-                                    var parts = value.Split('/');
-                                    currentGame.Opening = parts.Last();
-                                    break;
-                            }
-                        }
-                        else if (currentGame != null && !string.IsNullOrWhiteSpace(line))
-                        {
-                            currentGame.Moves = (currentGame.Moves ?? "") + line + " ";
-                        }
-                    }
-
-                    if (currentGame != null)
-                    {
-                        currentGame.PlayerElo = username == currentGame.White ? currentGame.WhiteElo : currentGame.BlackElo;
-                        currentGame.PlayerUsername = username;
-                        currentGame.Moves = FormatMoves(currentGame.Moves);
-                        currentGame.Category = SetCategoryFromTimeControl(currentGame.TimeControl);
-                        currentGame.ResultForPlayer = FindResultForPlayer(currentGame.Termination, currentGame.PlayerUsername);
-                        currentGame.EndOfGameBy = HowEndedTheGame(currentGame.Termination);
-
-                        if (currentGame.DateAndEndTime > lastGameDateAndTime)
-                        {
-                            gamesToReturn.Add(currentGame);
                         }
                     }
                 }
             }
-        }
-        _logger.Information("{MethodName} - Number of games returned {gamesToReturn}", nameof(CreateFormattedGamesList), gamesToReturn.Count());
-        return gamesToReturn;
-    }
 
-    // Fonction pour formatted les Moves utilisée par CreateFormattedGamesList
-    public static string FormatMoves(string moves)
-    {
-        if (moves == null)
-        {
-            return string.Empty;
-        }
-        string cleanedString = Regex.Replace(moves, "\\{[^}]+\\}", "");
-        var movesArray = cleanedString.Split(" ");
-        var filteredMoves = movesArray.Where(move => !move.Contains("...")).ToArray();
-        return string.Join(" ", filteredMoves).Replace("  ", " ");
-    }
+            _logger.Information(
+                "{MethodName} - Number of new games returned = {Count}",
+                nameof(CreateFormattedGamesList),
+                gamesToReturn.Count);
 
-    // Fonction pour définir le resultat pour le joueur demandé, utilisée par CreateFormattedGamesList
-    public static string FindResultForPlayer(string termination, string playerUsername)
-    {
-        if (termination.Contains("Partie nulle") || termination.Contains("drawn"))
-        {
-            return "drawn";
-        }
-        else if (termination.Contains(playerUsername, StringComparison.OrdinalIgnoreCase))
-        {
-            return "won";
-        }
-        else
-        {
-            return "lost";
-        }
-    }
-
-    // Fonction pour définir la cadence, utilisée par CreateFormattedGamesList
-    public static string SetCategoryFromTimeControl(string timeControl)
-    {
-        return timeControl switch
-        {
-            "60" or "120" or "120+1" => "bullet",
-            "180" or "180+2" or "300" => "blitz",
-            "600" or "600+5" or "1800" => "rapid",
-            _ => ""
-        };
-    }
-
-    // Fonction pour définir comment s'est terminée la partie, utilisée par CreateFormattedGamesList
-    public static string HowEndedTheGame(string termination)
-    {
-        if (termination.Contains("temps") || termination.Contains("time"))
-        {
-            return "time";
-        }
-        if (termination.Contains("échec et mat") || termination.Contains("checkmate"))
-        {
-            return "checkmate";
-        }
-        if (termination.Contains("abandon") || termination.Contains("resignation"))
-        {
-            return "abandonment";
-        }
-        if (termination.Contains("accord mutuel") || termination.Contains("mutual agreement"))
-        {
-            return "agreement";
-        }
-        if (termination.Contains("manque de matériel") || termination.Contains("insufficient material"))
-        {
-            return "lack of equipment";
-        }
-        if (termination.Contains("pat") || termination.Contains("stalemate"))
-        {
-            return "pat";
-        }
-        if (termination.Contains("répétition") || termination.Contains("repetition"))
-        {
-            return "repeat";
-        }
-        return "";
-    }
-
-    // Fonction pour sauvegarder en bdd
-    public async Task SaveGameInDatabaseAsync(List<Game> games)
-    {
-        try
-        {
-            await _context.Games.AddRangeAsync(games);
-            await _context.SaveChangesAsync();
-            _logger.Information("{MethodName} - Number of games saved in database {games}", nameof(CreateFormattedGamesList), games.Count());
-        }
-        catch (Exception e)
-        {
-            _logger.Error("Error in {MethodName}", nameof(SaveGameInDatabaseAsync), e);
-        }
-    }
-
-    // Fonction pour envoyer le contenu de la bdd au front
-    public async Task<List<Game>> GetGamesAsync(string username)
-    {
-        List<Game> result = new List<Game>();
-        try
-        {
-            result = await _context.Games.Where(g => g.PlayerUsername == username).ToListAsync();
-        }
-        catch (Exception e)
-        {
-            _logger.Error("Error in {MethodName}", nameof(GetGamesAsync), e);
-        }
-        return result;
-    }
-
-    public async Task<WinratesByHour> GetWinratesByHourAsync(string playerUsername)
-    {
-        // Récupérer les parties du joueur
-        var games = await _context.Games
-            .Where(g => g.PlayerUsername == playerUsername)
-            .ToListAsync();
-
-        if (!games.Any())
-        {
-            return null; // Aucun jeu à traiter
+            return gamesToReturn;
         }
 
-        // Initialiser un tableau pour stocker les parties jouées et gagnées par heure
-        int[] gamesPlayed = new int[24];
-        int[] gamesWon = new int[24];
-
-        // Parcourir les parties pour calculer les données par heure
-        foreach (var game in games)
+        // 4. Ici, au lieu de "sauver en BDD", on fusionne simplement en mémoire.
+        public Task SaveGameInDatabaseAsync(List<Game> games)
         {
-            var hour = game.DateAndEndTime.Hour;
-            gamesPlayed[hour]++;
+            // Si aucune partie => on ne fait rien
+            if (games == null || !games.Any()) return Task.CompletedTask;
 
-            if (game.ResultForPlayer == "won")
+            // On suppose que toutes les parties viennent du même username
+            var username = games.First().PlayerUsername;
+            if (!_inMemoryGames.ContainsKey(username))
             {
-                gamesWon[hour]++;
+                _inMemoryGames[username] = new List<Game>();
+            }
+
+            // On ajoute uniquement celles qui ne sont pas déjà présentes
+            // (ou on peut, plus simplement, tout ajouter si on n'a pas peur des doublons).
+            var existing = _inMemoryGames[username];
+            foreach (var g in games)
+            {
+                // Vérifie si on n'a pas déjà la même date+heure
+                if (!existing.Any(x => x.DateAndEndTime == g.DateAndEndTime && x.PlayerUsername == username))
+                {
+                    existing.Add(g);
+                }
+            }
+
+            _logger.Information(
+                "{MethodName} - {Count} games saved in memory for user {User}. Total in memory = {Total}",
+                nameof(SaveGameInDatabaseAsync),
+                games.Count,
+                username,
+                existing.Count);
+
+            return Task.CompletedTask;
+        }
+
+        // 5. Retourner toutes les parties en mémoire pour un username
+        public List<Game> GetGames(string username)
+        {
+            if (!_inMemoryGames.ContainsKey(username))
+            {
+                return new List<Game>();
+            }
+            return _inMemoryGames[username];
+        }
+
+        public static string FormatMoves(string moves)
+        {
+            if (moves == null) return string.Empty;
+            string cleanedString = Regex.Replace(moves, "\\{[^}]+\\}", "");
+            var movesArray = cleanedString.Split(" ");
+            var filteredMoves = movesArray.Where(move => !move.Contains("...")).ToArray();
+            return string.Join(" ", filteredMoves).Replace("  ", " ");
+        }
+
+        public static string FindResultForPlayer(string termination, string playerUsername)
+        {
+            if (termination.Contains("Partie nulle", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("drawn", StringComparison.OrdinalIgnoreCase))
+            {
+                return "drawn";
+            }
+            else if (termination.Contains(playerUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return "won";
+            }
+            else
+            {
+                return "lost";
             }
         }
 
-        // Calculer les winrates
-        var winrates = new double[24];
-        for (int i = 0; i < 24; i++)
+        public static string SetCategoryFromTimeControl(string timeControl)
         {
-            winrates[i] = gamesPlayed[i] > 0 ? (double)gamesWon[i] / gamesPlayed[i] : 0;
+            return timeControl switch
+            {
+                "60" or "120" or "120+1" => "bullet",
+                "180" or "180+2" or "300" => "blitz",
+                "600" or "600+5" or "1800" => "rapid",
+                _ => ""
+            };
         }
 
-        // Vérifier si une entrée pour ce joueur existe déjà dans WinratesByHour
-        var existingEntry = await _context.WinratesByHour.FindAsync(playerUsername);
-
-        if (existingEntry != null)
+        public static string HowEndedTheGame(string termination)
         {
-            // Mettre à jour les colonnes existantes
-            existingEntry.Hour_0 = winrates[0];
-            existingEntry.Hour_1 = winrates[1];
-            existingEntry.Hour_2 = winrates[2];
-            existingEntry.Hour_3 = winrates[3];
-            existingEntry.Hour_4 = winrates[4];
-            existingEntry.Hour_5 = winrates[5];
-            existingEntry.Hour_6 = winrates[6];
-            existingEntry.Hour_7 = winrates[7];
-            existingEntry.Hour_8 = winrates[8];
-            existingEntry.Hour_9 = winrates[9];
-            existingEntry.Hour_10 = winrates[10];
-            existingEntry.Hour_11 = winrates[11];
-            existingEntry.Hour_12 = winrates[12];
-            existingEntry.Hour_13 = winrates[13];
-            existingEntry.Hour_14 = winrates[14];
-            existingEntry.Hour_15 = winrates[15];
-            existingEntry.Hour_16 = winrates[16];
-            existingEntry.Hour_17 = winrates[17];
-            existingEntry.Hour_18 = winrates[18];
-            existingEntry.Hour_19 = winrates[19];
-            existingEntry.Hour_20 = winrates[20];
-            existingEntry.Hour_21 = winrates[21];
-            existingEntry.Hour_22 = winrates[22];
-            existingEntry.Hour_23 = winrates[23];
+            if (termination.Contains("temps", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("time", StringComparison.OrdinalIgnoreCase))
+                return "time";
+            if (termination.Contains("échec et mat", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("checkmate", StringComparison.OrdinalIgnoreCase))
+                return "checkmate";
+            if (termination.Contains("abandon", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("resignation", StringComparison.OrdinalIgnoreCase))
+                return "abandonment";
+            if (termination.Contains("accord mutuel", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("mutual agreement", StringComparison.OrdinalIgnoreCase))
+                return "agreement";
+            if (termination.Contains("manque de matériel", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("insufficient material", StringComparison.OrdinalIgnoreCase))
+                return "lack of equipment";
+            if (termination.Contains("pat", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("stalemate", StringComparison.OrdinalIgnoreCase))
+                return "pat";
+            if (termination.Contains("répétition", StringComparison.OrdinalIgnoreCase)
+                || termination.Contains("repetition", StringComparison.OrdinalIgnoreCase))
+                return "repeat";
 
-            _context.WinratesByHour.Update(existingEntry);
-            await _context.SaveChangesAsync();
-            return existingEntry;
+            return "";
         }
-        else
+
+        public Task<WinratesByHour> GetWinratesByHourAsync(string playerUsername)
         {
-            // Ajouter une nouvelle entrée si elle n'existe pas
-            var newEntry = new WinratesByHour
+            // On calcule en direct à partir des parties en mémoire
+            var games = GetGames(playerUsername);
+            if (!games.Any())
+            {
+                // Retourner un objet vide ou null.
+                return Task.FromResult<WinratesByHour>(null);
+            }
+
+            int[] gamesPlayed = new int[24];
+            int[] gamesWon = new int[24];
+
+            foreach (var game in games)
+            {
+                var hour = game.DateAndEndTime.Hour;
+                gamesPlayed[hour]++;
+                if (game.ResultForPlayer == "won")
+                {
+                    gamesWon[hour]++;
+                }
+            }
+
+            // Calcul des ratios
+            double[] winrates = new double[24];
+            for (int i = 0; i < 24; i++)
+            {
+                winrates[i] = gamesPlayed[i] > 0
+                    ? (double)gamesWon[i] / gamesPlayed[i]
+                    : 0.0;
+            }
+
+            // On renvoie l'objet WinratesByHour directement, sans stockage BDD
+            var result = new WinratesByHour
             {
                 PlayerUsername = playerUsername,
                 Hour_0 = winrates[0],
@@ -420,118 +398,89 @@ public class GamesService
                 Hour_20 = winrates[20],
                 Hour_21 = winrates[21],
                 Hour_22 = winrates[22],
-                Hour_23 = winrates[23],
+                Hour_23 = winrates[23]
             };
 
-            await _context.WinratesByHour.AddAsync(newEntry);
-            await _context.SaveChangesAsync();
-            return newEntry;
-        }
-    }
-
-    public async Task<AverageMovesByPiece> UpdateAverageMovesByPieceAsync(string playerUsername)
-    {
-        // Récupérer toutes les parties du joueur
-        var games = await _context.Games.Where(g => g.PlayerUsername == playerUsername).ToListAsync();
-
-        if (!games.Any())
-        {
-            throw new Exception("AverageMovesByPiece table is not configured in DbContext.");
+            return Task.FromResult(result);
         }
 
-        // Initialiser les compteurs
-        int totalGames = games.Count;
-        int pawnMoves = 0, knightMoves = 0, bishopMoves = 0;
-        int rookMoves = 0, queenMoves = 0, kingMoves = 0;
-
-        // Parcourir les parties et compter les coups par pièce
-        foreach (var game in games)
+        public Task<AverageMovesByPiece> UpdateAverageMovesByPieceAsync(string playerUsername)
         {
-            var moves = CountPieceMoves(game.Moves);
-
-            pawnMoves += moves["pawn"];
-            knightMoves += moves["knight"];
-            bishopMoves += moves["bishop"];
-            rookMoves += moves["rook"];
-            queenMoves += moves["queen"];
-            kingMoves += moves["king"];
-        }
-
-        // Calculer les moyennes
-        var averageMoves = new AverageMovesByPiece
-        {
-            PlayerUsername = playerUsername,
-            AvgPawnMoves = (double)pawnMoves / totalGames,
-            AvgKnightMoves = (double)knightMoves / totalGames,
-            AvgBishopMoves = (double)bishopMoves / totalGames,
-            AvgRookMoves = (double)rookMoves / totalGames,
-            AvgQueenMoves = (double)queenMoves / totalGames,
-            AvgKingMoves = (double)kingMoves / totalGames
-        };
-
-        // Vérifier si une entrée existe déjà
-        var existingEntry = await _context.AverageMovesByPiece.FindAsync(playerUsername);
-
-        if (existingEntry != null)
-        {
-            // Mettre à jour l'entrée existante
-            existingEntry.AvgPawnMoves = averageMoves.AvgPawnMoves;
-            existingEntry.AvgKnightMoves = averageMoves.AvgKnightMoves;
-            existingEntry.AvgBishopMoves = averageMoves.AvgBishopMoves;
-            existingEntry.AvgRookMoves = averageMoves.AvgRookMoves;
-            existingEntry.AvgQueenMoves = averageMoves.AvgQueenMoves;
-            existingEntry.AvgKingMoves = averageMoves.AvgKingMoves;
-
-            _context.AverageMovesByPiece.Update(existingEntry);
-        }
-        else
-        {
-            // Ajouter une nouvelle entrée
-            await _context.AverageMovesByPiece.AddAsync(averageMoves);
-        }
-
-        // Sauvegarder les modifications
-        await _context.SaveChangesAsync();
-        return averageMoves;
-    }
-
-    // Compter les coups par type de pièce
-    private Dictionary<string, int> CountPieceMoves(string movesString)
-    {
-        // Initialiser les compteurs
-        var movesCount = new Dictionary<string, int>
-    {
-        { "pawn", 0 },
-        { "knight", 0 },
-        { "bishop", 0 },
-        { "rook", 0 },
-        { "queen", 0 },
-        { "king", 0 }
-    };
-
-        // Diviser les coups en mouvements individuels
-        var moves = movesString.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var move in moves)
-        {
-            // Ignorer les numéros de tour (par exemple, "1.", "2.", etc.)
-            if (char.IsDigit(move[0]) && move.Contains('.'))
+            // On récupère toutes les parties en mémoire
+            var games = GetGames(playerUsername);
+            if (!games.Any())
             {
-                continue;
+                // Soit on renvoie null ou on lève une exception
+                return Task.FromResult<AverageMovesByPiece>(null);
             }
 
-            // Compter les coups en fonction du premier caractère
-            if (move.StartsWith("N")) movesCount["knight"]++; // Cavalier
-            else if (move.StartsWith("B")) movesCount["bishop"]++; // Fou
-            else if (move.StartsWith("R")) movesCount["rook"]++; // Tour
-            else if (move.StartsWith("Q")) movesCount["queen"]++; // Dame
-            else if (move.StartsWith("K")) movesCount["king"]++; // Roi
-            else if (char.IsLower(move[0])) movesCount["pawn"]++; // Pion (aucun préfixe)
+            int totalGames = games.Count;
+
+            int pawnMoves = 0, knightMoves = 0, bishopMoves = 0;
+            int rookMoves = 0, queenMoves = 0, kingMoves = 0;
+
+            // On compte les coups pour chaque partie
+            foreach (var game in games)
+            {
+                var movesDict = CountPieceMoves(game.Moves);
+                pawnMoves += movesDict["pawn"];
+                knightMoves += movesDict["knight"];
+                bishopMoves += movesDict["bishop"];
+                rookMoves += movesDict["rook"];
+                queenMoves += movesDict["queen"];
+                kingMoves += movesDict["king"];
+            }
+
+            // On calcule les moyennes
+            var averageMoves = new AverageMovesByPiece
+            {
+                PlayerUsername = playerUsername,
+                AvgPawnMoves = (double)pawnMoves / totalGames,
+                AvgKnightMoves = (double)knightMoves / totalGames,
+                AvgBishopMoves = (double)bishopMoves / totalGames,
+                AvgRookMoves = (double)rookMoves / totalGames,
+                AvgQueenMoves = (double)queenMoves / totalGames,
+                AvgKingMoves = (double)kingMoves / totalGames
+            };
+
+            // On renvoie simplement l'objet (pas de stockage BDD).
+            return Task.FromResult(averageMoves);
         }
 
-        return movesCount;
+        private Dictionary<string, int> CountPieceMoves(string movesString)
+        {
+            var movesCount = new Dictionary<string, int>
+            {
+                { "pawn",   0 },
+                { "knight", 0 },
+                { "bishop", 0 },
+                { "rook",   0 },
+                { "queen",  0 },
+                { "king",   0 }
+            };
+
+            if (string.IsNullOrWhiteSpace(movesString))
+                return movesCount;
+
+            var moves = movesString.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var move in moves)
+            {
+                // Ignorer les numéros de tour "1.", "2." etc.
+                if (char.IsDigit(move[0]) && move.Contains('.'))
+                    continue;
+
+                // On se base sur la notation classique
+                if (move.StartsWith("N")) movesCount["knight"]++;
+                else if (move.StartsWith("B")) movesCount["bishop"]++;
+                else if (move.StartsWith("R")) movesCount["rook"]++;
+                else if (move.StartsWith("Q")) movesCount["queen"]++;
+                else if (move.StartsWith("K")) movesCount["king"]++;
+                else if (char.IsLower(move[0]))
+                    movesCount["pawn"]++;
+            }
+
+            return movesCount;
+        }
     }
-
-
 }
-

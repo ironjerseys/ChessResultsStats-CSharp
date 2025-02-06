@@ -4,7 +4,6 @@ namespace ChessResultsStats_CSharp.Model;
 
 public class WinratesByHour
 {
-    [Key]
     [MaxLength(255)]
     public string PlayerUsername { get; set; }
 

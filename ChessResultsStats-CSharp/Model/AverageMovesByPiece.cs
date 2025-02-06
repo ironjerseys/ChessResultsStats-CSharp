@@ -1,10 +1,7 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace ChessResultsStats_CSharp.Model;
+﻿namespace ChessResultsStats_CSharp.Model;
 
 public class AverageMovesByPiece
 {
-    [Key]
     public string PlayerUsername { get; set; } = string.Empty;
 
     public double AvgPawnMoves { get; set; } = 0;

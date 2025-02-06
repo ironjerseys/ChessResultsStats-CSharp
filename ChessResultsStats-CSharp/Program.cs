@@ -1,22 +1,12 @@
-using ChessResultsStats_CSharp;
-using ChessResultsStats_CSharp.Data;
 using ChessResultsStats_CSharp.Service;
-using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
 
-// Service de base de données SQL Server
-builder.Services.AddDbContext<ChessGamesDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("ChessGamesDbConnection")));
-
-// Health Check 
-builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("Database");
-
 // Serilog
 Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(builder.Configuration)  // Charger la config depuis appsettings.json
+    .ReadFrom.Configuration(builder.Configuration)
     .WriteTo.Console()
     .WriteTo.File("logs/log-.txt", rollingInterval: RollingInterval.Day)
     .CreateLogger();
@@ -45,8 +35,6 @@ var app = builder.Build();
 
 app.UseCors("AllowAngularApp");
 
-// Active le point d'accès Health Check
-app.MapHealthChecks("/health");
 
 // Configure le pipeline HTTP
 if (app.Environment.IsDevelopment())
