@@ -1,6 +1,4 @@
-using ChessResultsStats_CSharp.Data;
 using ChessResultsStats_CSharp.Service;
-using Microsoft.EntityFrameworkCore;
 using Moq;
 
 namespace ChessResultsStats.Tests
@@ -11,14 +9,12 @@ namespace ChessResultsStats.Tests
         public void CreateFormattedGamesList_ShouldReturnExpectedGameObject()
         {
             // Arrange
-            var options = new DbContextOptionsBuilder<ChessGamesDbContext>()
-                .UseInMemoryDatabase(databaseName: "TestDatabase")
-                .Options;
-
-            using var dbContext = new ChessGamesDbContext(options);
-
             var mockLogger = new Mock<Serilog.ILogger>();
-            var service = new GamesService(mockLogger.Object, dbContext);
+
+            // ?? On instancie GamesService sans DbContext,
+            //    en supposant que votre nouveau constructeur
+            //    n'en a plus besoin.
+            var service = new GamesService(mockLogger.Object);
 
             // JSON compact correspondant aux données réelles
             var sampleData = new List<string>
@@ -55,7 +51,7 @@ namespace ChessResultsStats.Tests
             Assert.Equal("JustMovingPieces01", game.PlayerUsername);
             Assert.Equal("lost", game.ResultForPlayer); // Résultat pour le joueur noir
             Assert.Equal("abandonment", game.EndOfGameBy); // Fin de partie par abandon
-            Assert.Null(game.Accuracy); // Aucune précision pour le joueur noir dans cet exemple
+            Assert.Null(game.Accuracy); // Aucune précision pour le joueur noir
             Assert.Equal("Caro-Kann-Defense-Fantasy-Variation", game.Opening);
             Assert.Equal("B12", game.Eco);
             Assert.Equal(new DateTime(2024, 11, 16, 9, 41, 17), game.DateAndEndTime);
