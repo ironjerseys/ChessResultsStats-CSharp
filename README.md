@@ -10,8 +10,6 @@ The application is built with C# 12.0 and .NET 8.0, and you can download the Ang
 
 This website calls an API from Chess.com to collect data from the wanted username
 
-The results are saved in database to visualize it when you want
-
 You can see the results in the charts
 
 ## How to install it :
